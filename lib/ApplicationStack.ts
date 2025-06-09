@@ -38,6 +38,7 @@ export class ApplicationStack extends Stack {
     const repo = new Repository(this, 'ContainerRepository', {
       repositoryName: this.config.service.name.toLocaleLowerCase(),
       removalPolicy: RemovalPolicy.DESTROY,
+      emptyOnDelete: true,
     });
     this.createCodePilene(repo);
     const cluster = config.infrastructureStack.getEcsCluster();
@@ -83,6 +84,7 @@ export class ApplicationStack extends Stack {
       port: this.config.service.container.port,
       protocol: ApplicationProtocol.HTTP,
       targets: [ecsService],
+      targetGroupName: this.config.service.name,
       healthCheck: {
         path: '/',
         port: `${this.config.service.container.port}`, // not sure if it was actually needed or last deployment had a bug on AWS.
@@ -213,7 +215,7 @@ export class ApplicationStack extends Stack {
 
     repo.grantPull(taskDefinition.obtainExecutionRole());
     const service = new FargateService(this, 'EcsService', {
-      serviceName: 'web',
+      serviceName: this.config.service.name,
       cluster,
       taskDefinition,
       minHealthyPercent: 100,

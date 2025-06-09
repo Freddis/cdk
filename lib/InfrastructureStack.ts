@@ -42,21 +42,21 @@ export class InfrastructureStack extends Stack {
     return this.vpc;
   }
   protected createElasticLoadBalancer(vpc: IVpc): ApplicationLoadBalancer {
+    const sg = new SecurityGroup(this, 'SecurityGroupLoadBalancerPrimary', {
+      securityGroupName: 'load-balancer-primary',
+      vpc,
+    });
     const lb = new ApplicationLoadBalancer(this, 'LoadBalancerPrimary', {
       vpc,
       internetFacing: true,
+      securityGroup: sg,
+      loadBalancerName: 'Primary',
     });
-    // lb.addRedirect({
-    //   sourceProtocol: ApplicationProtocol.HTTP,
-    //   sourcePort: 80,
-    //   targetProtocol: ApplicationProtocol.HTTPS,
-    //   targetPort: 443,
-    // });
     return lb;
   }
   protected createEcsCluster(vpc: IVpc): Cluster {
     const cluster = new Cluster(this, 'EcsClusterPrimary', {
-      clusterName: 'primary',
+      clusterName: 'Primary',
       vpc: vpc,
     });
     return cluster;
@@ -72,6 +72,7 @@ export class InfrastructureStack extends Stack {
       description: 'Security group for primary postgres instance',
       allowAllIpv6Outbound: true,
       allowAllOutbound: true,
+      securityGroupName: 'postgres-primary',
     });
     dbSercurityGroup.addIngressRule(Peer.anyIpv4(), Port.POSTGRES, 'Allow everyone inside for postgres');
     dbSercurityGroup.addIngressRule(Peer.anyIpv6(), Port.POSTGRES, 'Allow everyone inside for postgres');
