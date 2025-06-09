@@ -17,6 +17,7 @@ export class InfrastructureStack extends Stack {
     super(scope, 'Infrastructure', {
       ...props,
       stackName: 'Infrastructure',
+      description: 'Global shared infrastructure such as clusters, databases, load balancers',
     });
     this.vpc = Vpc.fromLookup(this, 'CloudPrimary', {
       isDefault: true,

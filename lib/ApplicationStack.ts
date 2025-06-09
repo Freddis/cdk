@@ -1,9 +1,9 @@
-import {App, RemovalPolicy, Stack} from 'aws-cdk-lib';
+import {App, Duration, RemovalPolicy, Stack} from 'aws-cdk-lib';
 import {ApplicationStackProps} from './types/ApplicationStackProps';
 import {Certificate, CertificateValidation} from 'aws-cdk-lib/aws-certificatemanager';
 import {BuildSpec, PipelineProject, LinuxBuildImage} from 'aws-cdk-lib/aws-codebuild';
-import {Pipeline, Artifact} from 'aws-cdk-lib/aws-codepipeline';
-import {CodeStarConnectionsSourceAction, CodeBuildAction} from 'aws-cdk-lib/aws-codepipeline-actions';
+import {Pipeline, Artifact, ArtifactPath} from 'aws-cdk-lib/aws-codepipeline';
+import {CodeStarConnectionsSourceAction, CodeBuildAction, EcsDeployAction} from 'aws-cdk-lib/aws-codepipeline-actions';
 import {SecurityGroup, Peer, Port} from 'aws-cdk-lib/aws-ec2';
 import {Repository} from 'aws-cdk-lib/aws-ecr';
 import {
@@ -33,17 +33,20 @@ export class ApplicationStack extends Stack {
   protected config: ApplicationStackProps;
 
   constructor(scope: App, config: ApplicationStackProps) {
-    super(scope, config.service.name, {env: config.aws});
+    super(scope, config.service.name, {
+      env: config.aws,
+      description: `Application stack for: ${config.service.name} `,
+    });
     this.config = config;
     const repo = new Repository(this, 'ContainerRepository', {
       repositoryName: this.config.service.name.toLocaleLowerCase(),
       removalPolicy: RemovalPolicy.DESTROY,
       emptyOnDelete: true,
     });
-    this.createCodePilene(repo);
     const cluster = config.infrastructureStack.getEcsCluster();
-    const ecsService = this.createEcsService(repo, cluster);
     const loadBalancer = config.infrastructureStack.getLoadBalancer();
+    const ecsService = this.createEcsService(repo, cluster);
+    this.createCodePilene(repo, ecsService);
     this.attachDomainsToTask(ecsService, loadBalancer);
   }
 
@@ -110,7 +113,7 @@ export class ApplicationStack extends Stack {
     return dnsArecord;
   }
 
-  protected createCodePilene(repo: Repository) {
+  protected createCodePilene(repo: Repository, ecsService: FargateService) {
     const pipeline = new Pipeline(this, 'PipelineDeploy', {
       pipelineName: `${this.config.service.name}`,
     });
@@ -166,6 +169,17 @@ export class ApplicationStack extends Stack {
           input: pullOutput,
           outputs: [buildOutput],
           project,
+        }),
+      ],
+    });
+    pipeline.addStage({
+      stageName: 'Deploy',
+      actions: [
+        new EcsDeployAction({
+          actionName: `${this.config.service.name}`,
+          service: ecsService,
+          deploymentTimeout: Duration.minutes(10),
+          imageFile: new ArtifactPath(buildOutput, 'imagedefinitions.json'),
         }),
       ],
     });

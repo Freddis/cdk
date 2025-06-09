@@ -17,7 +17,12 @@ phases:
     commands:
       - echo "Pushing Docker image to ECR..."
       - docker push ${ECR_REPO_URI}:${TAG}
+      - printf '[{\"name\":\"web\",\"imageUri\":\"%s\"}]' ${ECR_REPO_URI}:${TAG} > imagedefinitions.json
+      - pwd; ls -al; cat imagedefinitions.json
       - echo "Image pushed successfully."
+artifacts:
+  files:
+      - imagedefinitions.json
 env:
   exported-variables:
     - TAG
