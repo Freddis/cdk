@@ -1,0 +1,38 @@
+{
+  "vpc-provider:account=243637693468:filter.isDefault=true:region=eu-central-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-050dfc30a797a1914",
+    "vpcCidrBlock": "172.31.0.0/16",
+    "ownerAccountId": "243637693468",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "Public",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-088be3222abb9c62a",
+            "cidr": "172.31.16.0/20",
+            "availabilityZone": "eu-central-1a",
+            "routeTableId": "rtb-00a6ecf99638eda02"
+          },
+          {
+            "subnetId": "subnet-0064e48ccf28dd4ad",
+            "cidr": "172.31.32.0/20",
+            "availabilityZone": "eu-central-1b",
+            "routeTableId": "rtb-00a6ecf99638eda02"
+          },
+          {
+            "subnetId": "subnet-0efe8b76875f3a5c0",
+            "cidr": "172.31.0.0/20",
+            "availabilityZone": "eu-central-1c",
+            "routeTableId": "rtb-00a6ecf99638eda02"
+          }
+        ]
+      }
+    ]
+  },
+  "hosted-zone:account=243637693468:domainName=alex-sarychev.com:region=eu-central-1": {
+    "Id": "/hostedzone/Z046803856RBN4L35OBD",
+    "Name": "alex-sarychev.com."
+  }
+}
