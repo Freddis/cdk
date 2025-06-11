@@ -32,6 +32,9 @@ import {DbType} from './config/types/DbType';
 import {DatabaseInstance} from 'aws-cdk-lib/aws-rds';
 import {PostgresDbUser} from './constructs/PostgresDbUser/PostgresDbUser';
 import {BuildSpecObject} from './types/BuildSpecObject';
+import {DockerImageAsset, Platform} from 'aws-cdk-lib/aws-ecr-assets';
+import {join} from 'path';
+import {DockerImageName, ECRDeployment} from 'cdk-ecr-deployment';
 
 export class ApplicationStack extends Stack {
   protected config: ApplicationStackProps;
@@ -47,6 +50,7 @@ export class ApplicationStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
       emptyOnDelete: true,
     });
+    this.createDummyImageDeployment(repo);
     const cluster = config.infrastructureStack.getEcsCluster();
     const loadBalancer = config.infrastructureStack.getLoadBalancer();
     const db = config.infrastructureStack.getPostgresDb();
@@ -54,6 +58,22 @@ export class ApplicationStack extends Stack {
     const ecsService = this.createEcsService(repo, cluster, dbUser);
     this.createCodePilene(repo, ecsService, dbUser);
     this.attachDomainsToTask(ecsService, loadBalancer);
+  }
+
+  protected createDummyImageDeployment(repo: Repository) {
+    const asset = new DockerImageAsset(this, 'DockerDummyImage', {
+      directory: join(__dirname, 'ecs-dummy-docker-container'),
+      platform: Platform.LINUX_AMD64,
+      buildArgs: {
+        PORT: this.config.service.container.port.toString(),
+      },
+    });
+
+    const ecrDeployment = new ECRDeployment(this, 'DockerDummyImageEcrDeployment', {
+      src: new DockerImageName(asset.imageUri),
+      dest: new DockerImageName(`${repo.repositoryUri}:latest`),
+    });
+    return ecrDeployment;
   }
 
   protected createDbUser(db: DatabaseInstance): PostgresDbUser | undefined {
@@ -301,7 +321,6 @@ export class ApplicationStack extends Stack {
       minHealthyPercent: 100,
       assignPublicIp: true,
       securityGroups: [securityGroup],
-      desiredCount: process.env.INITIAL_DEPLOY ? 0 : undefined, //todo: check if it's working
     });
     return service;
   }
