@@ -8,5 +8,5 @@ export interface Config {
     region: string,
   },
   github: GithubConfig,
-   services: ServiceConfig[]
+  services: ServiceConfig[]
 }

@@ -1,3 +1,4 @@
+import {DbConfig} from './DbConfig';
 import {DomainConfig} from './DomanConfig';
 
 export interface ServiceConfig {
@@ -6,6 +7,7 @@ export interface ServiceConfig {
     repo: string,
     branch: string,
   },
+  database: DbConfig,
   container: {
     port: number,
     entrypoint: string,

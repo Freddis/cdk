@@ -1,7 +1,7 @@
 import {App, Duration, RemovalPolicy, Stack} from 'aws-cdk-lib';
 import {ApplicationStackProps} from './types/ApplicationStackProps';
 import {Certificate, CertificateValidation} from 'aws-cdk-lib/aws-certificatemanager';
-import {BuildSpec, PipelineProject, LinuxBuildImage} from 'aws-cdk-lib/aws-codebuild';
+import {BuildSpec, PipelineProject, LinuxBuildImage, BuildEnvironmentVariableType, PipelineProjectProps} from 'aws-cdk-lib/aws-codebuild';
 import {Pipeline, Artifact, ArtifactPath} from 'aws-cdk-lib/aws-codepipeline';
 import {CodeStarConnectionsSourceAction, CodeBuildAction, EcsDeployAction} from 'aws-cdk-lib/aws-codepipeline-actions';
 import {SecurityGroup, Peer, Port} from 'aws-cdk-lib/aws-ec2';
@@ -16,6 +16,7 @@ import {
   ContainerImage,
   AwsLogDriver,
   ICluster,
+  ContainerDefinitionProps,
 } from 'aws-cdk-lib/aws-ecs';
 import {
   ApplicationLoadBalancer,
@@ -27,7 +28,10 @@ import {
 import {LogGroup, RetentionDays} from 'aws-cdk-lib/aws-logs';
 import {HostedZone, IHostedZone, ARecord, RecordTarget} from 'aws-cdk-lib/aws-route53';
 import {LoadBalancerTarget} from 'aws-cdk-lib/aws-route53-targets';
-import {resolve} from 'path';
+import {DbType} from './config/types/DbType';
+import {DatabaseInstance} from 'aws-cdk-lib/aws-rds';
+import {PostgresDbUser} from './constructs/PostgresDbUser/PostgresDbUser';
+import {BuildSpecObject} from './types/BuildSpecObject';
 
 export class ApplicationStack extends Stack {
   protected config: ApplicationStackProps;
@@ -45,9 +49,25 @@ export class ApplicationStack extends Stack {
     });
     const cluster = config.infrastructureStack.getEcsCluster();
     const loadBalancer = config.infrastructureStack.getLoadBalancer();
-    const ecsService = this.createEcsService(repo, cluster);
-    this.createCodePilene(repo, ecsService);
+    const db = config.infrastructureStack.getPostgresDb();
+    const dbUser = this.createDbUser(db);
+    const ecsService = this.createEcsService(repo, cluster, dbUser);
+    this.createCodePilene(repo, ecsService, dbUser);
     this.attachDomainsToTask(ecsService, loadBalancer);
+  }
+
+  protected createDbUser(db: DatabaseInstance): PostgresDbUser | undefined {
+    if (this.config.service.database.type !== DbType.Postgres) {
+      return undefined;
+    }
+    const dbUser = new PostgresDbUser(this, 'PostgresDbUser', {
+      secretName: `${this.config.service.name}DbUser`,
+      dbInstance: db,
+      username: this.config.service.database.user,
+      permissions: ['SELECT', 'INSERT', 'UPDATE'],
+      database: this.config.service.database.database,
+    });
+    return dbUser;
   }
 
   protected attachDomainsToTask(ecsService: FargateService, loadBalancer: ApplicationLoadBalancer) {
@@ -113,7 +133,7 @@ export class ApplicationStack extends Stack {
     return dnsArecord;
   }
 
-  protected createCodePilene(repo: Repository, ecsService: FargateService) {
+  protected createCodePilene(repo: Repository, ecsService: FargateService, user?: PostgresDbUser) {
     const pipeline = new Pipeline(this, 'PipelineDeploy', {
       pipelineName: `${this.config.service.name}`,
     });
@@ -134,12 +154,40 @@ export class ApplicationStack extends Stack {
     });
 
     const buildOutput = new Artifact();
-    const spec = BuildSpec.fromAsset(resolve(__dirname, './buildspecs//buildspec.yaml'));
+    const spec = this.getBuildSpec();
     const logGroup = new LogGroup(this, 'LogGroupBuild', {
       retention: RetentionDays.ONE_DAY,
       logGroupName: `${this.config.service.name.toLocaleLowerCase()}-build`,
       removalPolicy: RemovalPolicy.DESTROY,
     });
+    const dbEnv: PipelineProjectProps['environmentVariables'] = {};
+    if (user) {
+      dbEnv.DB_USER = {
+        value: user.getUserNameSecretPath(),
+        type: BuildEnvironmentVariableType.SECRETS_MANAGER,
+      };
+      dbEnv.DB_PASSWORD = {
+        value: user.getPasswordSecretPath(),
+        type: BuildEnvironmentVariableType.SECRETS_MANAGER,
+      };
+      dbEnv.DB_DATABASE = {
+        value: user.getDatabaseSecretPath(),
+        type: BuildEnvironmentVariableType.SECRETS_MANAGER,
+      };
+      dbEnv.DB_HOST = {
+        value: user.getHostSecretPath(),
+        type: BuildEnvironmentVariableType.SECRETS_MANAGER,
+      };
+      dbEnv.DB_PORT = {
+        value: user.getPort(),
+      };
+      dbEnv.DB_SSL = {
+        value: 'true',
+      };
+      dbEnv.NODE_TLS_REJECT_UNAUTHORIZED = {
+        value: '0',
+      };
+    }
     const project = new PipelineProject(this, 'PipelineProjectDeploy', {
       buildSpec: spec,
       projectName: this.config.service.name,
@@ -158,9 +206,11 @@ export class ApplicationStack extends Stack {
         ECR_REPO_NAME: {value: repo.repositoryName},
         TAG: {value: 'latest'},
         STAGE_NAME: {value: 'production'},
+        ...dbEnv,
       },
     });
     repo.grantPullPush(project);
+    user?.getSecret().grantRead(project);
     pipeline.addStage({
       stageName: 'Build',
       actions: [
@@ -185,7 +235,7 @@ export class ApplicationStack extends Stack {
     });
   }
 
-  protected createEcsService(repo: Repository, cluster: ICluster): FargateService {
+  protected createEcsService(repo: Repository, cluster: ICluster, user?: PostgresDbUser): FargateService {
     const taskDefinitionProps: TaskDefinitionProps = {
       compatibility: Compatibility.FARGATE,
       cpu: '256',
@@ -201,6 +251,14 @@ export class ApplicationStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
     const taskDefinition = new TaskDefinition(this, 'TaskDefinition', taskDefinitionProps);
+
+    const dbSecrets: ContainerDefinitionProps['secrets'] = {};
+    if (user) {
+      dbSecrets.DB_HOST = user.getHostEcsSecret();
+      dbSecrets.DB_USER = user.getUserNameEcsSecret();
+      dbSecrets.DB_PASSWORD = user.getPasswordEcsSecret();
+      dbSecrets.DB_DATABASE = user.getDatabaseEcsSecret();
+    }
     taskDefinition.addContainer('web', {
       image: ContainerImage.fromEcrRepository(repo, 'latest'),
       logging: new AwsLogDriver({
@@ -216,6 +274,14 @@ export class ApplicationStack extends Stack {
           hostPort: this.config.service.container.port,
         },
       ],
+      secrets: {
+        ...dbSecrets,
+      },
+      environment: {
+        DB_SSL: 'true',
+        DB_PORT: '5432',
+        NODE_TLS_REJECT_UNAUTHORIZED: '0',
+      },
     });
     const securityGroup = new SecurityGroup(this, 'SecuirtyGroupEcsService', {
       vpc: cluster.vpc,
@@ -235,10 +301,54 @@ export class ApplicationStack extends Stack {
       minHealthyPercent: 100,
       assignPublicIp: true,
       securityGroups: [securityGroup],
-      desiredCount: 1,
+      desiredCount: process.env.INITIAL_DEPLOY ? 0 : undefined, //todo: check if it's working
     });
-
     return service;
+  }
+
+  protected getBuildSpec(): BuildSpec {
+
+    const spec: BuildSpecObject = {
+      version: '0.2',
+      phases: {
+        pre_build: {
+          commands: [
+            'echo "Authenticating Docker with ECR..."',
+            // eslint-disable-next-line max-len
+            'aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com',
+            'echo "ECR login successful."',
+          ],
+        },
+        build: {
+          commands: [
+            'echo "Building Docker image..."',
+            'pwd',
+            'ls -al',
+            'npm install',
+            'npm run db:migrate',
+            'docker build -t ${ECR_REPO_URI}:${TAG} .',
+            'echo "Build successful."',
+          ],
+        },
+        post_build: {
+          commands: [
+            'echo "Pushing Docker image to ECR..."',
+            'docker push ${ECR_REPO_URI}:${TAG}',
+            "printf '[{\"name\":\"web\",\"imageUri\":\"%s\"}]' ${ECR_REPO_URI}:${TAG} > imagedefinitions.json",
+            'ls -al',
+            'cat imagedefinitions.json',
+            'echo "Image pushed successfully."',
+          ],
+        },
+      },
+      artifacts: {
+        files: [
+          'imagedefinitions.json',
+        ],
+      },
+    };
+    const result = BuildSpec.fromObject(spec);
+    return result;
   }
 
 }

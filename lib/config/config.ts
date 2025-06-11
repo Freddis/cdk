@@ -1,4 +1,5 @@
 import {Config} from './types/Config';
+import {DbType} from './types/DbType';
 import {HostedZoneValue} from './types/HostedZoneValue';
 
 export const config: Config = {
@@ -16,6 +17,11 @@ export const config: Config = {
       github: {
         repo: 'gym-tracker-web',
         branch: 'production',
+      },
+      database: {
+        type: DbType.Postgres,
+        database: 'discipline',
+        user: 'discipline',
       },
       container: {
         port: 3000,
