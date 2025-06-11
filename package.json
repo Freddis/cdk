@@ -26,8 +26,6 @@
     "aws-cdk-lib": "2.198.0",
     "cdk-ecr-deployment": "^4.0.1",
     "constructs": "^10.0.0",
-    "i": "^0.3.7",
-    "npm": "^11.4.1",
     "yaml": "^2.8.0"
   }
 }
