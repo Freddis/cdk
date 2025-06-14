@@ -45,12 +45,7 @@ export class ApplicationStack extends Stack {
       description: `Application stack for: ${config.service.name} `,
     });
     this.config = config;
-    const repo = new Repository(this, 'ContainerRepository', {
-      repositoryName: this.config.service.name.toLocaleLowerCase(),
-      removalPolicy: RemovalPolicy.DESTROY,
-      emptyOnDelete: true,
-    });
-    this.createDummyImageDeployment(repo);
+    const repo = this.createEcrRepo();
     const cluster = config.infrastructureStack.getEcsCluster();
     const loadBalancer = config.infrastructureStack.getLoadBalancer();
     const db = config.infrastructureStack.getPostgresDb();
@@ -60,7 +55,12 @@ export class ApplicationStack extends Stack {
     this.attachDomainsToTask(ecsService, loadBalancer);
   }
 
-  protected createDummyImageDeployment(repo: Repository) {
+  protected createEcrRepo() {
+    const repo = new Repository(this, 'ContainerRepository', {
+      repositoryName: this.config.service.name.toLocaleLowerCase(),
+      removalPolicy: RemovalPolicy.DESTROY,
+      emptyOnDelete: true,
+    });
     const asset = new DockerImageAsset(this, 'DockerDummyImage', {
       directory: join(__dirname, 'ecs-dummy-docker-container'),
       platform: Platform.LINUX_AMD64,
@@ -69,11 +69,12 @@ export class ApplicationStack extends Stack {
       },
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const ecrDeployment = new ECRDeployment(this, 'DockerDummyImageEcrDeployment', {
       src: new DockerImageName(asset.imageUri),
       dest: new DockerImageName(`${repo.repositoryUri}:latest`),
     });
-    return ecrDeployment;
+    return repo;
   }
 
   protected createDbUser(db: DatabaseInstance): PostgresDbUser | undefined {
