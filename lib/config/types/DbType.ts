@@ -1,3 +1,4 @@
 export enum DbType {
-  Postgres,
+  Postgres = 'Postgres',
+  MariaDb = 'MariaDb',
 }

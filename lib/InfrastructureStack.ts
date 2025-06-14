@@ -1,17 +1,25 @@
 import {Stack, StackProps} from 'aws-cdk-lib';
 import {InstanceClass, InstanceSize, InstanceType, IVpc, Peer, Port, SecurityGroup, Vpc} from 'aws-cdk-lib/aws-ec2';
-import {Credentials, DatabaseInstance, DatabaseInstanceEngine, DatabaseInstanceProps, DatabaseSecret} from 'aws-cdk-lib/aws-rds';
+import {
+  Credentials,
+  DatabaseInstance,
+  DatabaseInstanceEngine,
+  DatabaseInstanceProps,
+  DatabaseSecret,
+  MariaDbEngineVersion,
+  PostgresEngineVersion} from 'aws-cdk-lib/aws-rds';
 import {Construct} from 'constructs';
-import {SecretName} from './types/SecretName';
 import {Cluster} from 'aws-cdk-lib/aws-ecs';
-import {ApplicationListener, ApplicationLoadBalancer} from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import {ApplicationLoadBalancer} from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import {uppercaseFirst} from './utils/strings';
+import {DbType} from './config/types/DbType';
 
 export class InfrastructureStack extends Stack {
   protected postgres: DatabaseInstance;
+  protected mysql: DatabaseInstance;
   protected ecsCluster: Cluster;
   protected loadBalancer: ApplicationLoadBalancer;
   protected vpc: IVpc;
-  protected loadBalancerHttpsListener: ApplicationListener;
 
   constructor(scope: Construct, props?: StackProps) {
     super(scope, 'Infrastructure', {
@@ -22,7 +30,8 @@ export class InfrastructureStack extends Stack {
     this.vpc = Vpc.fromLookup(this, 'CloudPrimary', {
       isDefault: true,
     });
-    this.postgres = this.createDb(this.vpc);
+    this.postgres = this.createDb(this.vpc, DbType.Postgres);
+    this.mysql = this.createDb(this.vpc, DbType.MariaDb);
     this.ecsCluster = this.createEcsCluster(this.vpc);
     this.loadBalancer = this.createElasticLoadBalancer(this.vpc);
   }
@@ -33,11 +42,11 @@ export class InfrastructureStack extends Stack {
   getPostgresDb(): DatabaseInstance {
     return this.postgres;
   }
+  getMysqlDb(): DatabaseInstance {
+    return this.mysql;
+  }
   getLoadBalancer(): ApplicationLoadBalancer {
     return this.loadBalancer;
-  }
-  getLoadBalancerHttpsListener() {
-    return this.loadBalancerHttpsListener;
   }
   getVpc(): IVpc {
     return this.vpc;
@@ -63,22 +72,37 @@ export class InfrastructureStack extends Stack {
     return cluster;
   }
 
-  protected createDb(vpc: IVpc): DatabaseInstance {
-    const creds = new DatabaseSecret(this, 'SecretPostgresPrimaryRootUser', {
-      secretName: SecretName.PostgresPrimaryRootUser,
-      username: 'postgres_root',
+
+  protected createDb(vpc: IVpc, dbType: DbType): DatabaseInstance {
+    type AllowedEngineTypes = typeof DatabaseInstanceEngine.MARIADB | typeof DatabaseInstanceEngine.POSTGRES;
+    const portMap: Record<DbType, Port> = {
+      [DbType.Postgres]: Port.POSTGRES,
+      [DbType.MariaDb]: Port.MYSQL_AURORA,
+    };
+    const engineMap: Record<DbType, AllowedEngineTypes> = {
+      [DbType.Postgres]: DatabaseInstanceEngine.postgres({
+        version: PostgresEngineVersion.VER_17_5,
+      }),
+      [DbType.MariaDb]: DatabaseInstanceEngine.mariaDb({
+        version: MariaDbEngineVersion.VER_10_11_11,
+      }),
+    };
+    const dbTypeKey = dbType.toString();
+    const creds = new DatabaseSecret(this, `Secret${uppercaseFirst(dbTypeKey)}PrimaryRootUser`, {
+      secretName: `${uppercaseFirst(dbTypeKey)}PrimaryRootUser`,
+      username: `${dbTypeKey.toLowerCase()}_root`,
     });
-    const dbSercurityGroup = new SecurityGroup(this, 'SecurityGroupPostgresPrimary', {
+    const dbSercurityGroup = new SecurityGroup(this, `SecurityGroup${uppercaseFirst(dbTypeKey)}Primary`, {
       vpc,
-      description: 'Security group for primary postgres instance',
+      description: `Security group for primary ${dbTypeKey.toLowerCase()} instance`,
       allowAllIpv6Outbound: true,
       allowAllOutbound: true,
-      securityGroupName: 'postgres-primary',
+      securityGroupName: `${dbTypeKey.toLowerCase()}-primary`,
     });
-    dbSercurityGroup.addIngressRule(Peer.anyIpv4(), Port.POSTGRES, 'Allow everyone inside for postgres');
-    dbSercurityGroup.addIngressRule(Peer.anyIpv6(), Port.POSTGRES, 'Allow everyone inside for postgres');
+    dbSercurityGroup.addIngressRule(Peer.anyIpv4(), portMap[dbType], `Allow everyone inside for ${dbTypeKey.toLowerCase()}`);
+    dbSercurityGroup.addIngressRule(Peer.anyIpv6(), portMap[dbType], `Allow everyone inside for ${dbTypeKey.toLowerCase()}`);
     const dbProps: DatabaseInstanceProps = {
-      engine: DatabaseInstanceEngine.POSTGRES,
+      engine: engineMap[dbType],
       credentials: Credentials.fromSecret(creds),
       instanceType: InstanceType.of(InstanceClass.T4G, InstanceSize.MICRO),
       vpc: vpc,
@@ -86,7 +110,7 @@ export class InfrastructureStack extends Stack {
       vpcSubnets: vpc,
       securityGroups: [dbSercurityGroup],
     };
-    const db = new DatabaseInstance(this, 'PosgresPrimary', dbProps);
+    const db = new DatabaseInstance(this, `${uppercaseFirst(dbTypeKey)}Primary`, dbProps);
     return db;
   }
 }

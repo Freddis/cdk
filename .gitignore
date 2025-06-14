@@ -10,3 +10,4 @@ cdk.out
 # Dev
 .vscode
 .DS_Store
+build
