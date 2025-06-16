@@ -40,7 +40,6 @@ export class PostgresDbUser extends Construct {
         APP_USER_SECRET_ARN: this.secret.secretArn,
         DB_ENDPOINT: props.dbInstance.dbInstanceEndpointAddress,
         DB_NAME: props.database,
-        PERMISSIONS: props.permissions.join(','),
       },
       timeout: Duration.seconds(30),
       bundling: {

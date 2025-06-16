@@ -88,7 +88,6 @@ export class ApplicationStack extends Stack {
       secretName: `${this.config.service.name}DbUser`,
       dbInstance: db,
       username: this.config.service.database.user,
-      permissions: ['SELECT', 'INSERT', 'UPDATE'],
       database: this.config.service.database.database,
     });
     return dbUser;

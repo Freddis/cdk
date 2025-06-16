@@ -5,6 +5,5 @@ export interface DatabaseUserProps {
   dbInstance: DatabaseInstance;
   secretName: string,
   username: string;
-  permissions: string[];
   database: string;
 }
