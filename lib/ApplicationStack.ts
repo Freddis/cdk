@@ -1,7 +1,13 @@
 import {App, Duration, RemovalPolicy, Stack} from 'aws-cdk-lib';
 import {ApplicationStackProps} from './types/ApplicationStackProps';
 import {Certificate, CertificateValidation} from 'aws-cdk-lib/aws-certificatemanager';
-import {BuildSpec, PipelineProject, LinuxBuildImage, BuildEnvironmentVariableType, PipelineProjectProps} from 'aws-cdk-lib/aws-codebuild';
+import {
+  BuildSpec,
+  PipelineProject,
+  LinuxBuildImage,
+  BuildEnvironmentVariableType,
+  PipelineProjectProps,
+} from 'aws-cdk-lib/aws-codebuild';
 import {Pipeline, Artifact, ArtifactPath} from 'aws-cdk-lib/aws-codepipeline';
 import {CodeStarConnectionsSourceAction, CodeBuildAction, EcsDeployAction} from 'aws-cdk-lib/aws-codepipeline-actions';
 import {SecurityGroup, Peer, Port} from 'aws-cdk-lib/aws-ec2';
@@ -31,12 +37,15 @@ import {LogGroup, RetentionDays} from 'aws-cdk-lib/aws-logs';
 import {HostedZone, IHostedZone, ARecord, RecordTarget} from 'aws-cdk-lib/aws-route53';
 import {LoadBalancerTarget} from 'aws-cdk-lib/aws-route53-targets';
 import {DbType} from './config/types/DbType';
-import {DatabaseInstance} from 'aws-cdk-lib/aws-rds';
 import {PostgresDbUser} from './constructs/PostgresDbUser/PostgresDbUser';
 import {BuildSpecObject} from './types/BuildSpecObject';
 import {DockerImageAsset, Platform} from 'aws-cdk-lib/aws-ecr-assets';
 import {join} from 'path';
 import {DockerImageName, ECRDeployment} from 'cdk-ecr-deployment';
+import {DbUser} from './types/DbUser';
+import {MariaDbUser} from './constructs/MariaDbUser/MariaDbUser';
+import {ServiceType} from './config/types/ServiceType';
+import {Secret} from 'aws-cdk-lib/aws-secretsmanager';
 
 export class ApplicationStack extends Stack {
   protected config: ApplicationStackProps;
@@ -50,8 +59,7 @@ export class ApplicationStack extends Stack {
     const repo = this.createEcrRepo();
     const cluster = config.infrastructureStack.getEcsCluster();
     const httpsListener = config.infrastructureStack.getLoadBalancerHttpsListener();
-    const db = config.infrastructureStack.getPostgresDb();
-    const dbUser = this.createDbUser(db);
+    const dbUser = this.createDbUser();
     const ecsService = this.createEcsService(repo, cluster, dbUser);
     this.createCodePilene(repo, ecsService, dbUser);
     this.attachDomainsToTask(ecsService, httpsListener);
@@ -79,18 +87,29 @@ export class ApplicationStack extends Stack {
     return repo;
   }
 
-  protected createDbUser(db: DatabaseInstance): PostgresDbUser | undefined {
-    if (this.config.service.database.type !== DbType.Postgres) {
-      return undefined;
-    }
-    const dbUser = new PostgresDbUser(this, 'PostgresDbUser', {
-      service: this.config.service.name,
-      secretName: `${this.config.service.name}DbUser`,
-      dbInstance: db,
-      username: this.config.service.database.user,
-      database: this.config.service.database.database,
-    });
-    return dbUser;
+  protected createDbUser(): DbUser | undefined {
+    const map: Record<DbType, () => DbUser> = {
+      [DbType.Postgres]: (): DbUser => {
+        return new PostgresDbUser(this, 'PostgresDbUser', {
+          service: this.config.service.name,
+          secretName: `${this.config.service.name}DbUser`,
+          dbInstance: this.config.infrastructureStack.getPostgresDb(),
+          username: this.config.service.database.user,
+          database: this.config.service.database.database,
+        });
+      },
+      [DbType.MariaDb]: (): DbUser => {
+        return new MariaDbUser(this, 'MariaDbUser', {
+          service: this.config.service.name,
+          secretName: `${this.config.service.name}DbUser`,
+          dbInstance: this.config.infrastructureStack.getMysqlDb(),
+          username: this.config.service.database.user,
+          database: this.config.service.database.database,
+        });
+      },
+    };
+    const user = map[this.config.service.database.type]();
+    return user;
   }
 
   protected attachDomainsToTask(ecsService: FargateService, httpsListener: ApplicationListener) {
@@ -155,7 +174,7 @@ export class ApplicationStack extends Stack {
     return {dnsArecord, appSert, rule};
   }
 
-  protected createCodePilene(repo: Repository, ecsService: FargateService, user?: PostgresDbUser) {
+  protected createCodePilene(repo: Repository, ecsService: FargateService, dbUser?: DbUser) {
     const pipeline = new Pipeline(this, 'PipelineDeploy', {
       pipelineName: `${this.config.service.name}`,
     });
@@ -171,9 +190,11 @@ export class ApplicationStack extends Stack {
           connectionArn: this.config.github.connectionArn,
           triggerOnPush: true,
           actionName: `${this.config.service.name}`,
+          codeBuildCloneOutput: true,
         }),
       ],
     });
+    const githubSecret = Secret.fromSecretNameV2(this, 'GithubSecret', 'GithubAccessToken');
 
     const buildOutput = new Artifact();
     const spec = this.getBuildSpec();
@@ -183,25 +204,25 @@ export class ApplicationStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
     const dbEnv: PipelineProjectProps['environmentVariables'] = {};
-    if (user) {
+    if (dbUser) {
       dbEnv.DB_USER = {
-        value: user.getUserNameSecretPath(),
+        value: dbUser.getUserNameSecretPath(),
         type: BuildEnvironmentVariableType.SECRETS_MANAGER,
       };
       dbEnv.DB_PASSWORD = {
-        value: user.getPasswordSecretPath(),
+        value: dbUser.getPasswordSecretPath(),
         type: BuildEnvironmentVariableType.SECRETS_MANAGER,
       };
       dbEnv.DB_DATABASE = {
-        value: user.getDatabaseSecretPath(),
+        value: dbUser.getDatabaseSecretPath(),
         type: BuildEnvironmentVariableType.SECRETS_MANAGER,
       };
       dbEnv.DB_HOST = {
-        value: user.getHostSecretPath(),
+        value: dbUser.getHostSecretPath(),
         type: BuildEnvironmentVariableType.SECRETS_MANAGER,
       };
       dbEnv.DB_PORT = {
-        value: user.getPort(),
+        value: dbUser.getPort(),
       };
       dbEnv.DB_SSL = {
         value: 'true',
@@ -228,11 +249,16 @@ export class ApplicationStack extends Stack {
         ECR_REPO_NAME: {value: repo.repositoryName},
         TAG: {value: 'latest'},
         STAGE_NAME: {value: 'production'},
+        GITHUB_TOKEN: {
+          value: `${githubSecret.secretName}:token`,
+          type: BuildEnvironmentVariableType.SECRETS_MANAGER,
+        },
         ...dbEnv,
       },
     });
+    githubSecret.grantRead(project);
     repo.grantPullPush(project);
-    user?.getSecret().grantRead(project);
+    dbUser?.getSecret().grantRead(project);
     pipeline.addStage({
       stageName: 'Build',
       actions: [
@@ -257,7 +283,7 @@ export class ApplicationStack extends Stack {
     });
   }
 
-  protected createEcsService(repo: Repository, cluster: ICluster, user?: PostgresDbUser): FargateService {
+  protected createEcsService(repo: Repository, cluster: ICluster, user?: DbUser): FargateService {
     const taskDefinitionProps: TaskDefinitionProps = {
       compatibility: Compatibility.FARGATE,
       cpu: '256',
@@ -289,7 +315,7 @@ export class ApplicationStack extends Stack {
       }),
       containerName: 'web',
       command: this.config.service.container.cmd,
-      entryPoint: [this.config.service.container.entrypoint],
+      entryPoint: this.config.service.container.entrypoint ? [this.config.service.container.entrypoint] : undefined,
       portMappings: [
         {
           containerPort: this.config.service.container.port,
@@ -328,6 +354,20 @@ export class ApplicationStack extends Stack {
   }
 
   protected getBuildSpec(): BuildSpec {
+    const prebuildSpecificCode: Record<ServiceType, string[]> = {
+      [ServiceType.NodeJs]: [],
+      [ServiceType.PhpWebsite]: [
+        'git config --global url."https://x-access-token:$GITHUB_TOKEN@github.com".insteadOf "https://github.com"',
+        'git submodule update --init --recursive --force',
+      ],
+    };
+    const postbuildpecificCode: Record<ServiceType, string[]> = {
+      [ServiceType.NodeJs]: [
+        'npm install',
+        'npm run db:migrate',
+      ],
+      [ServiceType.PhpWebsite]: [],
+    };
 
     const spec: BuildSpecObject = {
       version: '0.2',
@@ -345,9 +385,9 @@ export class ApplicationStack extends Stack {
             'echo "Building Docker image..."',
             'pwd',
             'ls -al',
-            'npm install',
-            'npm run db:migrate',
+            ...prebuildSpecificCode[this.config.service.type],
             'docker build -t ${ECR_REPO_URI}:${TAG} .',
+            ...postbuildpecificCode[this.config.service.type],
             'echo "Build successful."',
           ],
         },

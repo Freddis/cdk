@@ -10,7 +10,7 @@ import {NodejsFunction} from 'aws-cdk-lib/aws-lambda-nodejs';
 import {DatabaseUserProps} from '../../types/DatabaseUserProps';
 import {DbUserSecretFields} from '../../types/DbUserSecretFields';
 
-export class PostgresDbUser extends Construct {
+export class MariaDbUser extends Construct {
   public readonly secret: Secret;
   protected secretName: string;
 
@@ -32,9 +32,9 @@ export class PostgresDbUser extends Construct {
     });
 
     const handler = new NodejsFunction(this, 'DatabaseUserLambdaFunction', {
-      functionName: `${props.service}PostgresDbUserCreate`,
+      functionName: `${props.service}MariaDbUserCreate`,
       runtime: Runtime.NODEJS_18_X,
-      entry: join(__dirname, 'postgres-user-lambda/index.ts'),
+      entry: join(__dirname, 'mariadb-user-lambda/index.ts'),
       environment: {
         DB_SECRET_ARN: props.dbInstance.secret!.secretArn,
         APP_USER_SECRET_ARN: this.secret.secretArn,

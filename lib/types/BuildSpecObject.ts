@@ -15,6 +15,7 @@ export interface BuildSpecObject {
     files: string[];
   };
   env?: {
-    'exported-variables': string[];
+    'exported-variables'?: string[];
+    'git-credential-helper'?: 'yes' | 'no'
   };
 }

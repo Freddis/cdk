@@ -1,6 +1,7 @@
 import {Config} from './types/Config';
 import {DbType} from './types/DbType';
 import {HostedZoneValue} from './types/HostedZoneValue';
+import {ServiceType} from './types/ServiceType';
 
 export const config: Config = {
   aws: {
@@ -15,6 +16,7 @@ export const config: Config = {
   services: [
     {
       name: 'Discipline',
+      type: ServiceType.NodeJs,
       github: {
         repo: 'gym-tracker-web',
         branch: 'production',
@@ -39,6 +41,7 @@ export const config: Config = {
     },
     {
       name: 'Circuits',
+      type: ServiceType.NodeJs,
       github: {
         repo: 'logic-processor',
         branch: 'production',
@@ -58,6 +61,29 @@ export const config: Config = {
         {
           domain: HostedZoneValue.AlexSarychev,
           subdomain: 'circuits',
+        },
+      ],
+    },
+    {
+      name: 'HomeStudio',
+      type: ServiceType.PhpWebsite,
+      github: {
+        repo: 'homestudio',
+        branch: 'production',
+      },
+      database: {
+        type: DbType.MariaDb,
+        database: 'homestudio',
+        user: 'homestudio',
+      },
+      container: {
+        port: 3000,
+        listenerPriority: 30,
+      },
+      domains: [
+        {
+          domain: HostedZoneValue.AlexSarychev,
+          subdomain: 'homestudio',
         },
       ],
     },

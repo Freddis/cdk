@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.540.0",
+    "mariadb": "^3.4.2"
+  }
+}

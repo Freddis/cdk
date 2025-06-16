@@ -1,5 +1,5 @@
 import {SecretsManager} from '@aws-sdk/client-secrets-manager';
-import {Client} from 'pg';
+import {createConnection} from 'mariadb';
 
 const secrets = new SecretsManager({region: process.env.AWS_REGION});
 
@@ -13,6 +13,7 @@ interface Event {
 export const handler = async (event: Event) => {
   const {RequestType} = event;
 
+  // Fetch master and app user credentials
   const [masterSecret, appSecret] = await Promise.all([
     secrets.getSecretValue({SecretId: process.env.DB_SECRET_ARN!}),
     secrets.getSecretValue({SecretId: process.env.APP_USER_SECRET_ARN!}),
@@ -28,43 +29,25 @@ export const handler = async (event: Event) => {
     password: string,
   } = JSON.parse(appSecret.SecretString!);
 
-  const client = new Client({
+  const connection = await createConnection({
     host: process.env.DB_ENDPOINT,
-    port: 5432,
+    port: 3306,
     user: master.username,
     password: master.password,
-    ssl: true,
-    database: 'postgres',
   });
 
   try {
-    await client.connect();
     if (RequestType === 'Create' || RequestType === 'Update') {
-      const res = await client.query(`SELECT FROM pg_database WHERE datname = '${appUser.database}'`);
-      if (!res.rowCount || res.rowCount === 0) {
-        await client.query(`CREATE DATABASE ${appUser.database}`);
-      }
-      await client.query(`
-        DO $$
-        BEGIN
-          IF EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${appUser.username}') THEN
-            ALTER USER "${appUser.username}" WITH PASSWORD '${appUser.password}';
-          ELSE
-            CREATE USER "${appUser.username}" WITH PASSWORD '${appUser.password}';
-          END IF;
-          GRANT ALL PRIVILEGES ON DATABASE ${appUser.database} TO "${appUser.username}";
-        END
-        $$;
-      `);
+      await connection.query(`CREATE DATABASE IF NOT EXISTS \`${appUser.database}\``);
+      await connection.query(`CREATE USER IF NOT EXISTS '${appUser.username}'@'%' IDENTIFIED BY '${appUser.password}'`);
+      await connection.query(`GRANT ALL PRIVILEGES ON \`${appUser.database}\`.* TO '${appUser.username}'@'%'`);
+      await connection.query(`ALTER USER '${appUser.username}'@'%' IDENTIFIED BY '${appUser.password}'`);
+      await connection.query('FLUSH PRIVILEGES');
     } else if (RequestType === 'Delete') {
-      try {
-        await client.query(`DROP OWNED BY "${appUser.username}"`);
-        await client.query(`DROP USER IF EXISTS "${appUser.username}"`);
-      } catch {/* empty */}
+      await connection.query(`DROP USER IF EXISTS "${appUser.username}"`);
     }
-
     return {status: 'SUCCESS'};
   } finally {
-    await client.end();
+    await connection.end();
   }
 };
