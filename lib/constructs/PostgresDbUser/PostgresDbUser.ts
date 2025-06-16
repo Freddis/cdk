@@ -32,7 +32,7 @@ export class PostgresDbUser extends Construct {
     });
 
     const handler = new NodejsFunction(this, 'DatabaseUserLambdaFunction', {
-      functionName: 'createPostgresDbUser',
+      functionName: `${props.service}PostgresDbUserCreate`,
       runtime: Runtime.NODEJS_18_X,
       entry: join(__dirname, 'postgres-user-lambda/index.ts'),
       environment: {

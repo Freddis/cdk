@@ -10,6 +10,7 @@ export interface ServiceConfig {
   database: DbConfig,
   container: {
     port: number,
+    listenerPriority: number,
     entrypoint: string,
     cmd: string[],
   },

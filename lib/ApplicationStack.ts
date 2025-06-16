@@ -19,11 +19,13 @@ import {
   ContainerDefinitionProps,
 } from 'aws-cdk-lib/aws-ecs';
 import {
-  ApplicationLoadBalancer,
-  SslPolicy,
   ApplicationProtocol,
   ApplicationListener,
   ListenerAction,
+  ApplicationTargetGroup,
+  ListenerCondition,
+  ApplicationListenerRule,
+  ApplicationListenerCertificate,
 } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import {LogGroup, RetentionDays} from 'aws-cdk-lib/aws-logs';
 import {HostedZone, IHostedZone, ARecord, RecordTarget} from 'aws-cdk-lib/aws-route53';
@@ -47,12 +49,12 @@ export class ApplicationStack extends Stack {
     this.config = config;
     const repo = this.createEcrRepo();
     const cluster = config.infrastructureStack.getEcsCluster();
-    const loadBalancer = config.infrastructureStack.getLoadBalancer();
+    const httpsListener = config.infrastructureStack.getLoadBalancerHttpsListener();
     const db = config.infrastructureStack.getPostgresDb();
     const dbUser = this.createDbUser(db);
     const ecsService = this.createEcsService(repo, cluster, dbUser);
     this.createCodePilene(repo, ecsService, dbUser);
-    this.attachDomainsToTask(ecsService, loadBalancer);
+    this.attachDomainsToTask(ecsService, httpsListener);
   }
 
   protected createEcrRepo() {
@@ -82,6 +84,7 @@ export class ApplicationStack extends Stack {
       return undefined;
     }
     const dbUser = new PostgresDbUser(this, 'PostgresDbUser', {
+      service: this.config.service.name,
       secretName: `${this.config.service.name}DbUser`,
       dbInstance: db,
       username: this.config.service.database.user,
@@ -91,18 +94,18 @@ export class ApplicationStack extends Stack {
     return dbUser;
   }
 
-  protected attachDomainsToTask(ecsService: FargateService, loadBalancer: ApplicationLoadBalancer) {
+  protected attachDomainsToTask(ecsService: FargateService, httpsListener: ApplicationListener) {
     for (const domainConfig of this.config.service.domains) {
       const hostedZone = HostedZone.fromLookup(this, `HostedZone_${domainConfig.domain}`, {
         domainName: domainConfig.domain,
       });
-      this.attachDomainToTask(ecsService, loadBalancer, hostedZone, domainConfig.subdomain);
+      this.attachDomainToTask(ecsService, httpsListener, hostedZone, domainConfig.subdomain);
     }
   }
 
   protected attachDomainToTask(
     ecsService: FargateService,
-    loadBalancer: ApplicationLoadBalancer,
+    httpsListener: ApplicationListener,
     hostedZone: IHostedZone,
     subdomain?: string
   ) {
@@ -112,46 +115,45 @@ export class ApplicationStack extends Stack {
     if (subdomain) {
       extraDomains.push(`*.${subdomain}.${hostedZone.zoneName}`,);
     }
-    const sert = new Certificate(this, 'SslCertificate', {
+    const sert = new Certificate(this, `${this.config.service.name}SslCertificate`, {
       domainName: `${hostedZone.zoneName}`,
       subjectAlternativeNames: extraDomains,
       validation: CertificateValidation.fromDns(hostedZone),
     });
-
-    const httpsListener = new ApplicationListener(this, 'LoadBalancerListenerHttps', {
-      loadBalancer: loadBalancer,
+    const appSert = new ApplicationListenerCertificate(this, 'LoadBalancerListenerCertificateAttachment', {
       certificates: [sert],
-      port: 443,
-      sslPolicy: SslPolicy.RECOMMENDED,
+      listener: httpsListener,
     });
-    httpsListener.addTargets('LoadBalancerListenerTargets', {
-      port: this.config.service.container.port,
-      protocol: ApplicationProtocol.HTTP,
-      targets: [ecsService],
-      targetGroupName: this.config.service.name,
-      healthCheck: {
-        path: '/',
-        port: `${this.config.service.container.port}`, // not sure if it was actually needed or last deployment had a bug on AWS.
-      },
-    });
-    const httpListener = new ApplicationListener(this, 'LoadBalancerListenerHttp', {
-      loadBalancer: loadBalancer,
-      port: 80,
-    });
-    const action = ListenerAction.redirect({
-      port: '443',
-    });
-    httpListener.addAction('HTTPS Redirect', {
-      action,
+    const rule = new ApplicationListenerRule(this, 'LoadBalancerListenerRule', {
+      listener: httpsListener,
+      priority: this.config.service.container.listenerPriority,
+      conditions: [
+        ListenerCondition.hostHeaders([
+          `${subdomain}.${hostedZone.zoneName}`,
+        ]),
+      ],
+      action: ListenerAction.forward([
+        new ApplicationTargetGroup(this, 'LoadBalancerListenerTargetGroup', {
+          vpc: httpsListener.loadBalancer.vpc,
+          port: this.config.service.container.port,
+          protocol: ApplicationProtocol.HTTP,
+          targets: [ecsService],
+          targetGroupName: this.config.service.name,
+          healthCheck: {
+            path: '/',
+            port: `${this.config.service.container.port}`,
+          },
+        }),
+      ]),
     });
     const dnsArecord = new ARecord(this, 'DomainARecord', {
       zone: hostedZone,
       recordName: subdomain,
       target: RecordTarget.fromAlias(
-          new LoadBalancerTarget(loadBalancer)
+          new LoadBalancerTarget(httpsListener.loadBalancer)
         ),
     });
-    return dnsArecord;
+    return {dnsArecord, appSert, rule};
   }
 
   protected createCodePilene(repo: Repository, ecsService: FargateService, user?: PostgresDbUser) {

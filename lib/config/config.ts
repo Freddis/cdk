@@ -11,6 +11,7 @@ export const config: Config = {
     connectionArn: 'arn:aws:codeconnections:eu-central-1:243637693468:connection/5f03c120-8828-4a98-92d5-20fde7092e80',
     owner: 'Freddis',
   },
+  defaultHostedZone: HostedZoneValue.AlexSarychev,
   services: [
     {
       name: 'Discipline',
@@ -27,11 +28,36 @@ export const config: Config = {
         port: 3000,
         entrypoint: 'npm',
         cmd: ['run', 'start'],
+        listenerPriority: 10,
       },
       domains: [
         {
           domain: HostedZoneValue.AlexSarychev,
           subdomain: 'discipline',
+        },
+      ],
+    },
+    {
+      name: 'Circuits',
+      github: {
+        repo: 'logic-processor',
+        branch: 'production',
+      },
+      database: {
+        type: DbType.Postgres,
+        database: 'circuits',
+        user: 'circuits',
+      },
+      container: {
+        port: 3000,
+        entrypoint: 'npm',
+        cmd: ['run', 'start'],
+        listenerPriority: 20,
+      },
+      domains: [
+        {
+          domain: HostedZoneValue.AlexSarychev,
+          subdomain: 'circuits',
         },
       ],
     },
