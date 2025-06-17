@@ -25,6 +25,7 @@
     "strictBuiltinIteratorReturn": true,
     "strictFunctionTypes": true,
     "noImplicitReturns": true,
+    "noImplicitOverride": true,
     "typeRoots": [
       "./node_modules/@types"
     ]

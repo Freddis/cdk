@@ -1,13 +1,6 @@
 import {App, Duration, RemovalPolicy, Stack} from 'aws-cdk-lib';
 import {ApplicationStackProps} from './types/ApplicationStackProps';
 import {Certificate, CertificateValidation} from 'aws-cdk-lib/aws-certificatemanager';
-import {
-  BuildSpec,
-  PipelineProject,
-  LinuxBuildImage,
-  BuildEnvironmentVariableType,
-  PipelineProjectProps,
-} from 'aws-cdk-lib/aws-codebuild';
 import {Pipeline, Artifact, ArtifactPath} from 'aws-cdk-lib/aws-codepipeline';
 import {CodeStarConnectionsSourceAction, CodeBuildAction, EcsDeployAction} from 'aws-cdk-lib/aws-codepipeline-actions';
 import {SecurityGroup, Peer, Port} from 'aws-cdk-lib/aws-ec2';
@@ -38,14 +31,15 @@ import {HostedZone, IHostedZone, ARecord, RecordTarget} from 'aws-cdk-lib/aws-ro
 import {LoadBalancerTarget} from 'aws-cdk-lib/aws-route53-targets';
 import {DbType} from './config/types/DbType';
 import {PostgresDbUser} from './constructs/PostgresDbUser/PostgresDbUser';
-import {BuildSpecObject} from './types/BuildSpecObject';
 import {DockerImageAsset, Platform} from 'aws-cdk-lib/aws-ecr-assets';
 import {join} from 'path';
 import {DockerImageName, ECRDeployment} from 'cdk-ecr-deployment';
 import {DbUser} from './types/DbUser';
 import {MariaDbUser} from './constructs/MariaDbUser/MariaDbUser';
 import {ServiceType} from './config/types/ServiceType';
-import {Secret} from 'aws-cdk-lib/aws-secretsmanager';
+import {BasePipelineProjectStrategy} from './types/BasePipelineProjectStrategy';
+import {NodeJsPipelineProject} from './pipeline-projects/NodeJsPipelineProject';
+import {PhpWebsitePipelineProject} from './pipeline-projects/PhpWebsitePipelineProject';
 
 export class ApplicationStack extends Stack {
   protected config: ApplicationStackProps;
@@ -194,71 +188,15 @@ export class ApplicationStack extends Stack {
         }),
       ],
     });
-    const githubSecret = Secret.fromSecretNameV2(this, 'GithubSecret', 'GithubAccessToken');
 
     const buildOutput = new Artifact();
-    const spec = this.getBuildSpec();
+    const buildSpecStrategy = this.getBuildSpec();
     const logGroup = new LogGroup(this, 'LogGroupBuild', {
       retention: RetentionDays.ONE_DAY,
       logGroupName: `${this.config.service.name.toLocaleLowerCase()}-build`,
       removalPolicy: RemovalPolicy.DESTROY,
     });
-    const dbEnv: PipelineProjectProps['environmentVariables'] = {};
-    if (dbUser) {
-      dbEnv.DB_USER = {
-        value: dbUser.getUserNameSecretPath(),
-        type: BuildEnvironmentVariableType.SECRETS_MANAGER,
-      };
-      dbEnv.DB_PASSWORD = {
-        value: dbUser.getPasswordSecretPath(),
-        type: BuildEnvironmentVariableType.SECRETS_MANAGER,
-      };
-      dbEnv.DB_DATABASE = {
-        value: dbUser.getDatabaseSecretPath(),
-        type: BuildEnvironmentVariableType.SECRETS_MANAGER,
-      };
-      dbEnv.DB_HOST = {
-        value: dbUser.getHostSecretPath(),
-        type: BuildEnvironmentVariableType.SECRETS_MANAGER,
-      };
-      dbEnv.DB_PORT = {
-        value: dbUser.getPort(),
-      };
-      dbEnv.DB_SSL = {
-        value: 'true',
-      };
-      dbEnv.NODE_TLS_REJECT_UNAUTHORIZED = {
-        value: '0',
-      };
-    }
-    const project = new PipelineProject(this, 'PipelineProjectDeploy', {
-      buildSpec: spec,
-      projectName: this.config.service.name,
-      environment: {
-        buildImage: LinuxBuildImage.AMAZON_LINUX_2023_5,
-      },
-      logging: {
-        cloudWatch: {
-          logGroup: logGroup,
-        },
-      },
-      environmentVariables: {
-        AWS_DEFAULT_REGION: {value: Stack.of(this).region},
-        AWS_ACCOUNT_ID: {value: Stack.of(this).account},
-        ECR_REPO_URI: {value: repo.repositoryUri},
-        ECR_REPO_NAME: {value: repo.repositoryName},
-        TAG: {value: 'latest'},
-        STAGE_NAME: {value: 'production'},
-        GITHUB_TOKEN: {
-          value: `${githubSecret.secretName}:token`,
-          type: BuildEnvironmentVariableType.SECRETS_MANAGER,
-        },
-        ...dbEnv,
-      },
-    });
-    githubSecret.grantRead(project);
-    repo.grantPullPush(project);
-    dbUser?.getSecret().grantRead(project);
+    const project = buildSpecStrategy.createProject(this.config.service.name, logGroup, repo, dbUser);
     pipeline.addStage({
       stageName: 'Build',
       actions: [
@@ -353,63 +291,12 @@ export class ApplicationStack extends Stack {
     return service;
   }
 
-  protected getBuildSpec(): BuildSpec {
-    const prebuildSpecificCode: Record<ServiceType, string[]> = {
-      [ServiceType.NodeJs]: [],
-      [ServiceType.PhpWebsite]: [
-        'git config --global url."https://x-access-token:$GITHUB_TOKEN@github.com".insteadOf "https://github.com"',
-        'git submodule update --init --recursive --force',
-      ],
+  protected getBuildSpec(): BasePipelineProjectStrategy<string> {
+    const map : Record<ServiceType, BasePipelineProjectStrategy<string>> = {
+      [ServiceType.NodeJs]: new NodeJsPipelineProject(this),
+      [ServiceType.PhpWebsite]: new PhpWebsitePipelineProject(this),
     };
-    const postbuildpecificCode: Record<ServiceType, string[]> = {
-      [ServiceType.NodeJs]: [
-        'npm install',
-        'npm run db:migrate',
-      ],
-      [ServiceType.PhpWebsite]: [],
-    };
-
-    const spec: BuildSpecObject = {
-      version: '0.2',
-      phases: {
-        pre_build: {
-          commands: [
-            'echo "Authenticating Docker with ECR..."',
-            // eslint-disable-next-line max-len
-            'aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com',
-            'echo "ECR login successful."',
-          ],
-        },
-        build: {
-          commands: [
-            'echo "Building Docker image..."',
-            'pwd',
-            'ls -al',
-            ...prebuildSpecificCode[this.config.service.type],
-            'docker build -t ${ECR_REPO_URI}:${TAG} .',
-            ...postbuildpecificCode[this.config.service.type],
-            'echo "Build successful."',
-          ],
-        },
-        post_build: {
-          commands: [
-            'echo "Pushing Docker image to ECR..."',
-            'docker push ${ECR_REPO_URI}:${TAG}',
-            "printf '[{\"name\":\"web\",\"imageUri\":\"%s\"}]' ${ECR_REPO_URI}:${TAG} > imagedefinitions.json",
-            'ls -al',
-            'cat imagedefinitions.json',
-            'echo "Image pushed successfully."',
-          ],
-        },
-      },
-      artifacts: {
-        files: [
-          'imagedefinitions.json',
-        ],
-      },
-    };
-    const result = BuildSpec.fromObject(spec);
-    return result;
+    return map[this.config.service.type];
   }
 
 }
