@@ -136,12 +136,13 @@ export class ApplicationStack extends Stack {
       certificates: [sert],
       listener: httpsListener,
     });
+    const fullDomain = subdomain ? `${subdomain}.${hostedZone.zoneName}` : hostedZone.zoneName;
     const rule = new ApplicationListenerRule(this, 'LoadBalancerListenerRule', {
       listener: httpsListener,
       priority: this.config.service.container.listenerPriority,
       conditions: [
         ListenerCondition.hostHeaders([
-          `${subdomain}.${hostedZone.zoneName}`,
+          fullDomain,
         ]),
       ],
       action: ListenerAction.forward([
