@@ -87,5 +87,27 @@ export const config: Config = {
         },
       ],
     },
+    {
+      name: 'AlexSarychev',
+      type: ServiceType.NodeJs,
+      github: {
+        repo: 'cv',
+        branch: 'production',
+      },
+      database: {
+        type: DbType.Postgres,
+        database: 'alex_sarychev',
+        user: 'alex_sarychev',
+      },
+      container: {
+        port: 3000,
+        listenerPriority: 40,
+        entrypoint: 'npm',
+        cmd: ['run', 'start'],
+      },
+      domains: [{
+        domain: HostedZoneValue.AlexSarychev,
+      }],
+    },
   ],
 };
