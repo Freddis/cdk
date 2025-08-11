@@ -82,8 +82,7 @@ export const config: Config = {
       },
       domains: [
         {
-          domain: HostedZoneValue.AlexSarychev,
-          subdomain: 'homestudio',
+          domain: HostedZoneValue.HomeStudio,
         },
       ],
     },

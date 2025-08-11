@@ -34,5 +34,9 @@
   "hosted-zone:account=243637693468:domainName=alex-sarychev.com:region=eu-central-1": {
     "Id": "/hostedzone/Z046803856RBN4L35OBD",
     "Name": "alex-sarychev.com."
+  },
+  "hosted-zone:account=243637693468:domainName=home-studio.pro:region=eu-central-1": {
+    "Id": "/hostedzone/Z04386343DY5638PBMUSQ",
+    "Name": "home-studio.pro."
   }
 }
