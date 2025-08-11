@@ -81,7 +81,7 @@ export class InfrastructureStack extends Stack {
     });
     lb.addListener('LoadBalancerPrimaryListenerHttp', {
       port: 80,
-      defaultAction: ListenerAction.redirect({port: '443'}),
+      defaultAction: ListenerAction.redirect({port: '443',protocol: 'HTTPS', permanent: true}),
     });
     return httpsListener;
   }
