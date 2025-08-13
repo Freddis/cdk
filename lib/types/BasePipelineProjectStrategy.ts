@@ -98,7 +98,7 @@ export abstract class BasePipelineProjectStrategy<T extends string> {
       const res = Object.entries(obj).reduce((prev, curr) => {
         return {
           ...prev,
-          [curr[0]]: curr[1],
+          [curr[0]]: `$${curr[0]}`,
         };
       }, {});
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

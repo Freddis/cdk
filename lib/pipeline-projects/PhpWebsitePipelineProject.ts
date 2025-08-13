@@ -31,7 +31,7 @@ export class PhpWebsitePipelineProject extends BasePipelineProjectStrategy<PhpWe
 
   protected getPrebuildCmds(v: BuildEnvVars<PhpWebsiteEnvVarNames>): string[] {
     return [
-      `git config --global url."https://x-access-token:${v.GITHUB_TOKEN}@github.com".insteadOf "https://github.com"`,
+      `git config --global url."https://${v.GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"`,
       'git submodule update --init --recursive --force',
     ];
   }
