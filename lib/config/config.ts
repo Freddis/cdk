@@ -38,6 +38,13 @@ export const config: Config = {
           subdomain: 'discipline',
         },
       ],
+      aws: {
+        s3: {
+          bucketNames: [
+            'gymtracker-images-23',
+          ],
+        },
+      },
     },
     {
       name: 'Circuits',

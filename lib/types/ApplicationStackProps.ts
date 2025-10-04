@@ -8,4 +8,5 @@ export interface ApplicationStackProps {
   aws: Environment
   infrastructureStack: InfrastructureStack
   github: GithubConfig
+  s3BucketNames?: string[]
 }

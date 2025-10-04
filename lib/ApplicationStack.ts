@@ -1,4 +1,4 @@
-import {App, Duration, RemovalPolicy, Stack} from 'aws-cdk-lib';
+import {App, CfnOutput, Duration, RemovalPolicy, Stack} from 'aws-cdk-lib';
 import {ApplicationStackProps} from './types/ApplicationStackProps';
 import {Certificate, CertificateValidation} from 'aws-cdk-lib/aws-certificatemanager';
 import {Pipeline, Artifact, ArtifactPath} from 'aws-cdk-lib/aws-codepipeline';
@@ -40,6 +40,8 @@ import {ServiceType} from './config/types/ServiceType';
 import {BasePipelineProjectStrategy} from './types/BasePipelineProjectStrategy';
 import {NodeJsPipelineProject} from './pipeline-projects/NodeJsPipelineProject';
 import {PhpWebsitePipelineProject} from './pipeline-projects/PhpWebsitePipelineProject';
+import {Role, ServicePrincipal} from 'aws-cdk-lib/aws-iam';
+import {Bucket} from 'aws-cdk-lib/aws-s3';
 
 export class ApplicationStack extends Stack {
   protected config: ApplicationStackProps;
@@ -238,6 +240,12 @@ export class ApplicationStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
     const taskDefinition = new TaskDefinition(this, 'TaskDefinition', taskDefinitionProps);
+    const taskRole = new Role(this, 'TaskRole', {
+      assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
+    });
+    if (this.config.s3BucketNames && this.config.s3BucketNames?.length > 0) {
+      this.createS3Buckets(taskRole, this.config.s3BucketNames);
+    }
 
     const dbSecrets: ContainerDefinitionProps['secrets'] = {};
     if (user) {
@@ -246,6 +254,7 @@ export class ApplicationStack extends Stack {
       dbSecrets.DB_PASSWORD = user.getPasswordEcsSecret();
       dbSecrets.DB_DATABASE = user.getDatabaseEcsSecret();
     }
+
     taskDefinition.addContainer('web', {
       image: ContainerImage.fromEcrRepository(repo, 'latest'),
       logging: new AwsLogDriver({
@@ -270,17 +279,19 @@ export class ApplicationStack extends Stack {
         NODE_TLS_REJECT_UNAUTHORIZED: '0',
       },
     });
+
     const securityGroup = new SecurityGroup(this, 'SecuirtyGroupEcsService', {
       vpc: cluster.vpc,
       securityGroupName: `${this.config.service.name.toLocaleLowerCase()}-ecs-service`,
       description: 'Security group for docker container web',
       allowAllIpv6Outbound: true,
       allowAllOutbound: true,
-
     });
+
     securityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(this.config.service.container.port), 'HTTP acess');
 
     repo.grantPull(taskDefinition.obtainExecutionRole());
+
     const service = new FargateService(this, 'EcsService', {
       serviceName: this.config.service.name,
       cluster,
@@ -290,6 +301,30 @@ export class ApplicationStack extends Stack {
       securityGroups: [securityGroup],
     });
     return service;
+  }
+
+  protected createS3Buckets(taskRole: Role, bucketNames: string[]): void {
+    for (const bucketName of bucketNames) {
+      let bucket: Bucket;
+      try {
+      // Try to find an existing bucket in this account/region
+        bucket = Bucket.fromBucketName(this, `ImportedBucket-${bucketName}`, bucketName) as Bucket;
+      } catch {
+      // If lookup fails, create a new bucket with unique suffix
+        bucket = new Bucket(this, `CreatedBucket-${bucketName}`, {
+          bucketName: `${bucketName}-${this.stackName}`,
+          removalPolicy: RemovalPolicy.RETAIN,
+        });
+      }
+    // Grant ECS task role read/write access
+      bucket.grantReadWrite(taskRole);
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const bucketCnf = new CfnOutput(this, `BucketOutput-${bucketName}`, {
+        value: bucket.bucketName,
+        description: 'S3 bucket accessible by ECS task',
+      });
+    }
   }
 
   protected getBuildSpec(): BasePipelineProjectStrategy<string> {

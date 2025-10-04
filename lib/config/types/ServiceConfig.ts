@@ -9,6 +9,11 @@ export interface ServiceConfig {
     repo: string,
     branch: string,
   },
+  aws?: {
+    s3?: {
+      bucketNames: string[]
+    }
+  },
   database: DbConfig,
   container: {
     port: number,

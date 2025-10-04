@@ -17,6 +17,7 @@ for (const serviceConfig of config.services) {
     aws: config.aws,
     infrastructureStack: infrastructure,
     github: config.github,
+    s3BucketNames: serviceConfig.aws?.s3?.bucketNames,
   };
   const stack = new ApplicationStack(root, applicationProps);
   services.push(stack);
