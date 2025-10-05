@@ -13,6 +13,9 @@ export interface ServiceConfig {
     s3?: {
       bucketNames: string[]
     }
+    ses?: {
+      mailboxes: string[]
+    }
   },
   database: DbConfig,
   container: {

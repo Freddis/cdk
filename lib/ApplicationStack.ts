@@ -40,7 +40,7 @@ import {ServiceType} from './config/types/ServiceType';
 import {BasePipelineProjectStrategy} from './types/BasePipelineProjectStrategy';
 import {NodeJsPipelineProject} from './pipeline-projects/NodeJsPipelineProject';
 import {PhpWebsitePipelineProject} from './pipeline-projects/PhpWebsitePipelineProject';
-import {Role, ServicePrincipal} from 'aws-cdk-lib/aws-iam';
+import {PolicyStatement, Effect, IRole} from 'aws-cdk-lib/aws-iam';
 import {Bucket} from 'aws-cdk-lib/aws-s3';
 
 export class ApplicationStack extends Stack {
@@ -240,11 +240,13 @@ export class ApplicationStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
     const taskDefinition = new TaskDefinition(this, 'TaskDefinition', taskDefinitionProps);
-    const taskRole = new Role(this, 'TaskRole', {
-      assumedBy: new ServicePrincipal('ecs-tasks.amazonaws.com'),
-    });
+    const taskRole = taskDefinition.taskRole;
     if (this.config.s3BucketNames && this.config.s3BucketNames?.length > 0) {
       this.createS3Buckets(taskRole, this.config.s3BucketNames);
+    }
+
+    if (this.config.service.aws?.ses?.mailboxes && this.config.service.aws.ses.mailboxes.length > 0) {
+      this.createSesConfiguration(taskRole, this.config.service.aws.ses.mailboxes);
     }
 
     const dbSecrets: ContainerDefinitionProps['secrets'] = {};
@@ -303,7 +305,7 @@ export class ApplicationStack extends Stack {
     return service;
   }
 
-  protected createS3Buckets(taskRole: Role, bucketNames: string[]): void {
+  protected createS3Buckets(taskRole: IRole, bucketNames: string[]): void {
     for (const bucketName of bucketNames) {
       let bucket: Bucket;
       try {
@@ -318,7 +320,7 @@ export class ApplicationStack extends Stack {
       }
     // Grant ECS task role read/write access
       bucket.grantReadWrite(taskRole);
-
+      bucket.grantPutAcl(taskRole);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const bucketCnf = new CfnOutput(this, `BucketOutput-${bucketName}`, {
         value: bucket.bucketName,
@@ -335,4 +337,19 @@ export class ApplicationStack extends Stack {
     return map[this.config.service.type];
   }
 
+  protected createSesConfiguration(taskRole: IRole, mailboxes: string[]): void {
+    mailboxes.forEach((email) => {
+      taskRole.addToPrincipalPolicy(new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'ses:SendEmail',
+          'ses:SendRawEmail',
+          'ses:SendTemplatedEmail',
+        ],
+        resources: [
+          `arn:aws:ses:${this.region}:${this.account}:identity/${email}`,
+        ],
+      }));
+    });
+  }
 }

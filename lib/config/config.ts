@@ -44,6 +44,11 @@ export const config: Config = {
             'gymtracker-images-23',
           ],
         },
+        ses: {
+          mailboxes: [
+            'noreply@alex-sarychev.com',
+          ],
+        },
       },
     },
     {
