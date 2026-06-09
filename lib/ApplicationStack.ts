@@ -25,6 +25,7 @@ import {
   ListenerCondition,
   ApplicationListenerRule,
   ApplicationListenerCertificate,
+  Protocol,
 } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import {LogGroup, RetentionDays} from 'aws-cdk-lib/aws-logs';
 import {HostedZone, IHostedZone, ARecord, RecordTarget} from 'aws-cdk-lib/aws-route53';
@@ -157,6 +158,11 @@ export class ApplicationStack extends Stack {
           healthCheck: {
             path: '/',
             port: `${this.config.service.container.port}`,
+            protocol: Protocol.HTTP,
+            healthyThresholdCount: 3,
+            unhealthyThresholdCount: 10,
+            interval: Duration.seconds(20),
+            timeout: Duration.seconds(5),
           },
         }),
       ]),
@@ -298,7 +304,7 @@ export class ApplicationStack extends Stack {
       serviceName: this.config.service.name,
       cluster,
       taskDefinition,
-      minHealthyPercent: 100,
+      minHealthyPercent: 50,
       assignPublicIp: true,
       securityGroups: [securityGroup],
     });
