@@ -49,6 +49,16 @@ export const config: Config = {
             'noreply@alex-sarychev.com',
           ],
         },
+        secrets: [
+          {
+            secretName: 'DisciplineFatsecretCredentials',
+            envMapings: {
+              deviceId: 'FATSECRET_DEVICE_IDENTIFIER',
+              username: 'FATSECRET_USERNAME',
+              password: 'FATSECRET_PASSWORD',
+            },
+          },
+        ],
       },
     },
     {

@@ -2,6 +2,11 @@ import {DbConfig} from './DbConfig';
 import {DomainConfig} from './DomanConfig';
 import {ServiceType} from './ServiceType';
 
+export interface SecretConfig {
+  secretName: string,
+  envMapings: Record<string, string>
+}
+
 export interface ServiceConfig {
   name: string,
   type: ServiceType,
@@ -16,6 +21,7 @@ export interface ServiceConfig {
     ses?: {
       mailboxes: string[]
     }
+    secrets?: SecretConfig[]
   },
   database: DbConfig,
   container: {

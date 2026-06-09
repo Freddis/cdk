@@ -16,6 +16,7 @@ import {
   AwsLogDriver,
   ICluster,
   ContainerDefinitionProps,
+  Secret as EcsSecret,
 } from 'aws-cdk-lib/aws-ecs';
 import {
   ApplicationProtocol,
@@ -43,6 +44,7 @@ import {NodeJsPipelineProject} from './pipeline-projects/NodeJsPipelineProject';
 import {PhpWebsitePipelineProject} from './pipeline-projects/PhpWebsitePipelineProject';
 import {PolicyStatement, Effect, IRole} from 'aws-cdk-lib/aws-iam';
 import {Bucket} from 'aws-cdk-lib/aws-s3';
+import {Secret} from 'aws-cdk-lib/aws-secretsmanager';
 
 export class ApplicationStack extends Stack {
   protected config: ApplicationStackProps;
@@ -263,6 +265,19 @@ export class ApplicationStack extends Stack {
       dbSecrets.DB_DATABASE = user.getDatabaseEcsSecret();
     }
 
+    const secrets: ContainerDefinitionProps['secrets'] = {};
+    for (const secretConfig of this.config.service.aws?.secrets ?? []) {
+      const constSecretName = `SecretRef_${secretConfig.secretName.replace('/', '_')}`;
+      // const secret = new Secret(this, constSecretName, {
+      //   secretName: secretConfig.secretName,
+      // });
+      const secret = Secret.fromSecretNameV2(this, constSecretName, secretConfig.secretName);
+      for (const [fieldName, envName] of Object.entries(secretConfig.envMapings)) {
+        const ecsSecret = EcsSecret.fromSecretsManager(secret, fieldName);
+        ecsSecret.grantRead(taskDefinition.obtainExecutionRole());
+        secrets[envName] = ecsSecret;
+      }
+    }
     taskDefinition.addContainer('web', {
       image: ContainerImage.fromEcrRepository(repo, 'latest'),
       logging: new AwsLogDriver({
@@ -280,6 +295,7 @@ export class ApplicationStack extends Stack {
       ],
       secrets: {
         ...dbSecrets,
+        ...secrets,
       },
       environment: {
         DB_SSL: 'true',
