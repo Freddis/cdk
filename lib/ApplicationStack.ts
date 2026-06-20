@@ -278,6 +278,12 @@ export class ApplicationStack extends Stack {
         secrets[envName] = ecsSecret;
       }
     }
+    const dbEnv: ContainerDefinitionProps['environment'] = {};
+    if (user) {
+      dbEnv.DB_SSL = 'true';
+      dbEnv.DB_PORT = '5432';
+      dbEnv.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    }
     taskDefinition.addContainer('web', {
       image: ContainerImage.fromEcrRepository(repo, 'latest'),
       logging: new AwsLogDriver({
@@ -298,9 +304,8 @@ export class ApplicationStack extends Stack {
         ...secrets,
       },
       environment: {
-        DB_SSL: 'true',
-        DB_PORT: '5432',
-        NODE_TLS_REJECT_UNAUTHORIZED: '0',
+        ...dbEnv,
+        ...this.config.service.aws?.envVariables,
       },
     });
 

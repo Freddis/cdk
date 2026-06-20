@@ -49,6 +49,13 @@ export const config: Config = {
             'noreply@alex-sarychev.com',
           ],
         },
+        envVariables: {
+          NODE_ENV: 'production',
+          APP_BASE_URL: 'https://discipline.alex-sarychev.com',
+          EMAIL_FROM: 'noreply@alex-sarychev.com',
+          EMAIL_FROM_NAME: 'Discipline Tracker',
+          C0R_API_KEY: '', // create secret when needed
+        },
         secrets: [
           {
             secretName: 'DisciplineFatsecretCredentials',
@@ -56,6 +63,13 @@ export const config: Config = {
               deviceId: 'FATSECRET_DEVICE_IDENTIFIER',
               username: 'FATSECRET_USERNAME',
               password: 'FATSECRET_PASSWORD',
+            },
+          },
+          {
+            secretName: 'DisciplineAuthSettings',
+            envMapings: {
+              passwordSaltRounds: 'SERVICES_AUTH_HASH_SALT',
+              jwtSecret: 'SERVICES_AUTH_JWT_SECRET',
             },
           },
         ],

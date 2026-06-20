@@ -22,6 +22,7 @@ export interface ServiceConfig {
       mailboxes: string[]
     }
     secrets?: SecretConfig[]
+    envVariables?: Record<string, string>
   },
   database: DbConfig,
   container: {
