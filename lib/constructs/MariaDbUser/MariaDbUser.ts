@@ -17,7 +17,7 @@ export class MariaDbUser extends Construct {
   constructor(scope: Construct, id: string, props: DatabaseUserProps) {
     super(scope, id);
     this.secretName = props.secretName;
-    this.secret = new Secret(this, 'DatabaseUserSecret', {
+    this.secret = new Secret(this, 'MariaDatabaseUserSecret', {
       secretName: props.secretName,
       generateSecretString: {
         secretStringTemplate: JSON.stringify({

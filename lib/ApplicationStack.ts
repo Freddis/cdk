@@ -60,7 +60,7 @@ export class ApplicationStack extends Stack {
     const httpsListener = config.infrastructureStack.getLoadBalancerHttpsListener();
     const dbUser = this.createDbUser();
     const ecsService = this.createEcsService(repo, cluster, dbUser);
-    this.createCodePilene(repo, ecsService, dbUser);
+    this.createCodePipeline(repo, ecsService, dbUser);
     this.attachDomainsToTask(ecsService, httpsListener);
   }
 
@@ -87,27 +87,31 @@ export class ApplicationStack extends Stack {
   }
 
   protected createDbUser(): DbUser | undefined {
+    const dbConfig = this.config.service.database;
+    if (!dbConfig) {
+      return undefined;
+    }
     const map: Record<DbType, () => DbUser> = {
       [DbType.Postgres]: (): DbUser => {
         return new PostgresDbUser(this, 'PostgresDbUser', {
           service: this.config.service.name,
           secretName: `${this.config.service.name}DbUser`,
           dbInstance: this.config.infrastructureStack.getPostgresDb(),
-          username: this.config.service.database.user,
-          database: this.config.service.database.database,
+          username: dbConfig.user,
+          database: dbConfig.database,
         });
       },
       [DbType.MariaDb]: (): DbUser => {
         return new MariaDbUser(this, 'MariaDbUser', {
           service: this.config.service.name,
-          secretName: `${this.config.service.name}DbUser`,
+          secretName: `${this.config.service.name}MariaDbUser`,
           dbInstance: this.config.infrastructureStack.getMysqlDb(),
-          username: this.config.service.database.user,
-          database: this.config.service.database.database,
+          username: dbConfig.user,
+          database: dbConfig.database,
         });
       },
     };
-    const user = map[this.config.service.database.type]();
+    const user = map[dbConfig.type]();
     return user;
   }
 
@@ -179,7 +183,7 @@ export class ApplicationStack extends Stack {
     return {dnsArecord, appSert, rule};
   }
 
-  protected createCodePilene(repo: Repository, ecsService: FargateService, dbUser?: DbUser) {
+  protected createCodePipeline(repo: Repository, ecsService: FargateService, dbUser?: DbUser) {
     const pipeline = new Pipeline(this, 'PipelineDeploy', {
       pipelineName: `${this.config.service.name}`,
     });

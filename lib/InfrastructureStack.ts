@@ -16,15 +16,16 @@ import {DbType} from './config/types/DbType';
 import {Certificate, CertificateValidation} from 'aws-cdk-lib/aws-certificatemanager';
 import {HostedZoneValue} from './config/types/HostedZoneValue';
 import {HostedZone} from 'aws-cdk-lib/aws-route53';
+import {DatabasesConfig} from './config/types/Config';
 
 export class InfrastructureStack extends Stack {
-  protected postgres: DatabaseInstance;
-  protected mysql: DatabaseInstance;
+  protected postgres?: DatabaseInstance;
+  protected mysql?: DatabaseInstance;
   protected ecsCluster: Cluster;
   protected loadBalancerHttpsListener: ApplicationListener;
   protected vpc: IVpc;
 
-  constructor(scope: Construct, props: StackProps & {defaultHostedZone: HostedZoneValue}) {
+  constructor(scope: Construct, props: StackProps & {defaultHostedZone: HostedZoneValue, databases: DatabasesConfig}) {
     super(scope, 'Infrastructure', {
       ...props,
       stackName: 'Infrastructure',
@@ -33,8 +34,12 @@ export class InfrastructureStack extends Stack {
     this.vpc = Vpc.fromLookup(this, 'CloudPrimary', {
       isDefault: true,
     });
-    this.postgres = this.createDb(this.vpc, DbType.Postgres);
-    this.mysql = this.createDb(this.vpc, DbType.MariaDb);
+    if (props.databases.postgres) {
+      this.postgres = this.createDb(this.vpc, DbType.Postgres);
+    }
+    if (props.databases.mysql) {
+      this.mysql = this.createDb(this.vpc, DbType.MariaDb);
+    }
     this.ecsCluster = this.createEcsCluster(this.vpc);
     this.loadBalancerHttpsListener = this.createElasticLoadBalancer(this.vpc, props.defaultHostedZone);
   }
@@ -43,9 +48,15 @@ export class InfrastructureStack extends Stack {
     return this.ecsCluster;
   }
   getPostgresDb(): DatabaseInstance {
+    if (!this.postgres) {
+      throw new Error('Postgres is disabled in config. Cannot get DB instance.');
+    }
     return this.postgres;
   }
   getMysqlDb(): DatabaseInstance {
+    if (!this.mysql) {
+      throw new Error('MySQL is disabled in config. Cannot get DB instance.');
+    }
     return this.mysql;
   }
 

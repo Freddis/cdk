@@ -24,7 +24,7 @@ export interface ServiceConfig {
     secrets?: SecretConfig[]
     envVariables?: Record<string, string>
   },
-  database: DbConfig,
+  database?: DbConfig,
   container: {
     port: number,
     listenerPriority: number,

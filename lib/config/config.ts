@@ -13,6 +13,10 @@ export const config: Config = {
     owner: 'Freddis',
   },
   defaultHostedZone: HostedZoneValue.AlexSarychev,
+  databases: {
+    postgres: true,
+    mysql: false,
+  },
   services: [
     {
       name: 'Discipline',
@@ -75,31 +79,31 @@ export const config: Config = {
         ],
       },
     },
-    {
-      name: 'Circuits',
-      type: ServiceType.NodeJs,
-      github: {
-        repo: 'logic-processor',
-        branch: 'production',
-      },
-      database: {
-        type: DbType.Postgres,
-        database: 'circuits',
-        user: 'circuits',
-      },
-      container: {
-        port: 3000,
-        entrypoint: 'npm',
-        cmd: ['run', 'start'],
-        listenerPriority: 20,
-      },
-      domains: [
-        {
-          domain: HostedZoneValue.AlexSarychev,
-          subdomain: 'circuits',
-        },
-      ],
-    },
+    // {
+    //   name: 'Circuits',
+    //   type: ServiceType.NodeJs,
+    //   github: {
+    //     repo: 'logic-processor',
+    //     branch: 'production',
+    //   },
+    //   database: {
+    //     type: DbType.Postgres,
+    //     database: 'circuits',
+    //     user: 'circuits',
+    //   },
+    //   container: {
+    //     port: 3000,
+    //     entrypoint: 'npm',
+    //     cmd: ['run', 'start'],
+    //     listenerPriority: 20,
+    //   },
+    //   domains: [
+    //     {
+    //       domain: HostedZoneValue.AlexSarychev,
+    //       subdomain: 'circuits',
+    //     },
+    //   ],
+    // },
     {
       name: 'HomeStudio',
       type: ServiceType.PhpWebsite,
@@ -108,7 +112,7 @@ export const config: Config = {
         branch: 'production',
       },
       database: {
-        type: DbType.MariaDb,
+        type: DbType.Postgres,
         database: 'homestudio',
         user: 'homestudio',
       },

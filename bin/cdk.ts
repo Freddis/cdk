@@ -9,6 +9,7 @@ const root = new App();
 export const infrastructure = new InfrastructureStack(root, {
   env: config.aws,
   defaultHostedZone: config.defaultHostedZone,
+  databases: config.databases,
 });
 const services: Stack[] = []; // pleasing eslint
 for (const serviceConfig of config.services) {
