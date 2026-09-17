@@ -1,3 +1,5 @@
+import {Cpu} from '../types/Cpu';
+import {Memory} from '../types/Memory';
 import {Config} from './types/Config';
 import {DbType} from './types/DbType';
 import {HostedZoneValue} from './types/HostedZoneValue';
@@ -32,6 +34,8 @@ export const config: Config = {
       },
       container: {
         port: 3000,
+        cpu: Cpu.x0_5,
+        memory: Memory.x1,
         entrypoint: 'npm',
         cmd: ['run', 'start'],
         listenerPriority: 10,

@@ -1,3 +1,5 @@
+import {Cpu} from '../../types/Cpu';
+import {Memory} from '../../types/Memory';
 import {DbConfig} from './DbConfig';
 import {DomainConfig} from './DomanConfig';
 import {ServiceType} from './ServiceType';
@@ -26,6 +28,8 @@ export interface ServiceConfig {
   },
   database?: DbConfig,
   container: {
+    cpu?: Cpu,
+    memory?: Memory,
     port: number,
     listenerPriority: number,
     entrypoint?: string,

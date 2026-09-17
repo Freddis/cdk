@@ -45,6 +45,8 @@ import {PhpWebsitePipelineProject} from './pipeline-projects/PhpWebsitePipelineP
 import {PolicyStatement, Effect, IRole} from 'aws-cdk-lib/aws-iam';
 import {Bucket} from 'aws-cdk-lib/aws-s3';
 import {Secret} from 'aws-cdk-lib/aws-secretsmanager';
+import {Cpu} from './types/Cpu';
+import {Memory} from './types/Memory';
 
 export class ApplicationStack extends Stack {
   protected config: ApplicationStackProps;
@@ -239,8 +241,8 @@ export class ApplicationStack extends Stack {
   protected createEcsService(repo: Repository, cluster: ICluster, user?: DbUser): FargateService {
     const taskDefinitionProps: TaskDefinitionProps = {
       compatibility: Compatibility.FARGATE,
-      cpu: '256',
-      memoryMiB: '512',
+      cpu: this.config.service.container.cpu ?? Cpu.x0_25,
+      memoryMiB: this.config.service.container.memory ?? Memory.x0_5,
       runtimePlatform: {
         cpuArchitecture: CpuArchitecture.X86_64,
         operatingSystemFamily: OperatingSystemFamily.LINUX,
